@@ -77,6 +77,11 @@ else if (_result is not null)
             <input type="text" @bind="_tag" disabled="@_busy" />
         </label>
         <p class="muted">Image: <code>@Provider?.ImageName:@_tag</code>. The container is bound to 127.0.0.1 and uses a named volume for data.</p>
+        <label class="check">
+            <input type="checkbox" @bind="_sharedNetwork" disabled="@_busy" />
+            Application container access
+        </label>
+        <p class="muted">Allow applications on <code>devdb-network</code> to connect using this database's container name. Loopback access stays available. <a href="/help#application-container-access">Connecting from application containers</a></p>
 
         @if (_errors.Count > 0)
         {
@@ -132,7 +137,7 @@ else if (_result is not null)
     private readonly CancellationTokenSource _cts = new();
     private string _dbms = "", _name = "", _password = "", _database = "master", _tag = "2022-latest";
     private int _port = 1433;
-    private bool _busy, _showPw, _showCompose, _generated;
+    private bool _busy, _showPw, _showCompose, _generated, _sharedNetwork;
     private string? _edited, _editedKey;
     private ComposeEdit? _lastEdit;
     private IReadOnlyList<string> _errors = [];
@@ -141,9 +146,9 @@ else if (_result is not null)
 
     private IDbmsProvider? Provider => Manager.GetProvider(_dbms);
 
-    private InstanceCreateRequest Request() => new(_name.Trim(), _dbms, _port, _password, _database.Trim(), _tag.Trim());
+    private InstanceCreateRequest Request() => new(_name.Trim(), _dbms, _port, _password, _database.Trim(), _tag.Trim(), _sharedNetwork);
 
-    private string FormKey => $"{_dbms}|{_port}|{_password}|{_database}|{_tag}|{_showPw}";
+    private string FormKey => $"{_dbms}|{_port}|{_password}|{_database}|{_tag}|{_showPw}|{_sharedNetwork}";
 
     // The form is the source of truth: text typed in the editor only survives until the form changes.
     private string YamlText
@@ -208,7 +213,7 @@ else if (_result is not null)
     {
         if (_busy) return;
         _result = null;
-        var req = new InstanceCreateRequest(_name.Trim(), _dbms, _port, _password, _database.Trim(), _tag.Trim());
+        var req = Request();
         _errors = InstanceValidation.Validate(req);
         if (_errors.Count > 0) return;
 

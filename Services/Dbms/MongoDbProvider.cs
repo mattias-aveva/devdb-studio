@@ -38,6 +38,8 @@ public sealed class MongoDbProvider(IWslDockerRunner docker, ILogger<MongoDbProv
 
         try
         {
+            var network = await ContainerLifecycle.CreatePrivateNetworkAsync(docker, container, ct);
+            if (!network.Success) return InstanceCreateResult.Fail(network.Message, network.StdErr);
             var run = await docker.RunAsync(BuildRunArgs(req, id, container, volume), PullAndRunTimeout, ct: ct);
 
             if (run.ExitCode != 0)
@@ -57,6 +59,8 @@ public sealed class MongoDbProvider(IWslDockerRunner docker, ILogger<MongoDbProv
                 Password = req.Password,
                 VolumeName = volume,
                 ImageTag = tag,
+                SharedNetwork = req.SharedNetwork,
+                NetworkChangesSupported = true,
             };
 
             var ready = await WaitUntilReadyAsync(instance, ct);
@@ -77,6 +81,7 @@ public sealed class MongoDbProvider(IWslDockerRunner docker, ILogger<MongoDbProv
     public IReadOnlyList<string> BuildRunArgs(InstanceCreateRequest req, Guid id, string container, string volume) =>
     [
         "run", "-d", "--name", container,
+        .. SharedContainerNetwork.RunArgs(req, container),
         "--label", "dbapp.managed=true", "--label", $"dbapp.id={id}", "--label", $"dbapp.dbms={Key}",
         // Loopback only: the password is the sole protection of this server.
         "-p", $"127.0.0.1:{req.HostPort}:27017",
@@ -98,8 +103,8 @@ public sealed class MongoDbProvider(IWslDockerRunner docker, ILogger<MongoDbProv
     public Task<QueryResult> ExecuteSqlAsync(DbInstance instance, string script, CancellationToken ct) =>
         RunShellAsync(instance, script, QueryTimeout, ct);
 
-    public string BuildConnectionString(DbInstance i, bool maskPassword) =>
-        $"mongodb://{Uri.EscapeDataString(i.Username)}:{(maskPassword ? "*****" : Uri.EscapeDataString(i.Password))}@127.0.0.1:{i.HostPort}/{i.DatabaseName}?authSource=admin";
+    public string BuildConnectionString(DbInstance i, bool maskPassword, string host = "127.0.0.1") =>
+        $"mongodb://{Uri.EscapeDataString(i.Username)}:{(maskPassword ? "*****" : Uri.EscapeDataString(i.Password))}@{host}:{i.HostPort}/{i.DatabaseName}?authSource=admin";
 
     private async Task<QueryResult> RunShellAsync(DbInstance instance, string script, TimeSpan timeout, CancellationToken ct)
     {

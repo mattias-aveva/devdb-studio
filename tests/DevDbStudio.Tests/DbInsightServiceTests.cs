@@ -23,6 +23,8 @@ public class DbInsightServiceTests
         public Task<InstanceActionResult> StopAsync(Guid id, CancellationToken ct = default) => throw new NotSupportedException();
         public Task<InstanceActionResult> DeleteAsync(Guid id, bool deleteVolume, CancellationToken ct = default) => throw new NotSupportedException();
         public string BuildConnectionString(DbInstance instance, bool maskPassword) => throw new NotSupportedException();
+        public string? BuildNetworkConnectionString(DbInstance instance, bool maskPassword) => throw new NotSupportedException();
+        public Task<InstanceActionResult> SetSharedNetworkAsync(Guid id, bool enabled, CancellationToken ct = default) => throw new NotSupportedException();
     }
 
     private static QueryResult Ok(string stdout) => new(true, stdout, "", 0, TimeSpan.Zero);

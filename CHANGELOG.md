@@ -9,6 +9,14 @@ Versioning follows [SemVer](https://semver.org): `MAJOR.MINOR.PATCH`.
 The version lives in one place: `<Version>` in `DevDbStudio.csproj`. Bump it with every change and add an entry here.
 It is shown in the sidebar footer.
 
+## Unreleased
+- Clarified that application container access applies only to newly created instances.
+- Setup checks Docker CLI/Engine 25.0+ and API 1.44+ for application container access. Unsupported or unreadable versions are rejected before creating application networks or enabling access; loopback-only instances and disabling access remain available.
+- Added optional per-instance **Application container access** through the DNS-enabled `devdb-network` bridge. Newly created instances support enabling/disabling access after creation while preserving data and loopback access through separate private networks.
+- Instance cards provide separate reveal/copy controls for host and application container connection strings, using each database's container name and internal port. Compose previews include the networks.
+- Help documents application Compose configuration, linked beside each access setting. Existing instances are left unchanged and do not receive the networking toggle.
+- Podman-managed WSL distros use their existing service socket to avoid WSLg runtime-directory and namespace mismatches when creating bridge-network containers.
+
 ## 2.0.0
 - Create instance: the DBMS list is sorted alphabetically (SQL Server stays the preselected default); the Help page lists systems alphabetically, explains the generated password and how to write CouchDB queries.
 - Added **CouchDB** (`docker.io/library/couchdb`, default tag `3`, admin user `admin`, password required, data in a volume). Fauxton is reachable at `/_utils` on the instance port; the system databases `_users` and `_replicator` are created on first start. The Query page takes HTTP requests, one per line (`GET /_all_dbs`, `PUT /customers`, `POST /customers {"name": "Anna"}`; further lines continue the JSON body) that are sent with curl inside the container, with the credentials passed on stdin. Replies are shown with their status code and indented JSON; Status shows database count and size. No table designer or table data. The create form has no database name field for CouchDB.

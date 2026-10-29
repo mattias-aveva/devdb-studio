@@ -17,6 +17,7 @@
         <a href="help#pages">The pages</a>
         <a href="help#dbms">Database systems</a>
         <a href="help#connect">Connecting from your tools</a>
+        <a href="help#application-container-access">Application container access</a>
         <a href="help#data">Data, backups and deleting</a>
         <a href="help#troubleshooting">Troubleshooting</a>
     </nav>
@@ -30,7 +31,7 @@
                 Nothing but the container engine is installed on the host.
             </p>
             <div class="help__facts">
-                <div><strong>Local only</strong><span>Every server is published on <code>127.0.0.1</code>, so only this computer can reach it.</span></div>
+                <div><strong>Local publishing</strong><span>Every server's host port binds to <code>127.0.0.1</code>. Optional application container access also allows connections from attached application containers.</span></div>
                 <div><strong>Persistent</strong><span>Data lives in a named volume and survives stop, start and restart.</span></div>
                 <div><strong>Eight systems</strong><span>SQL Server, PostgreSQL, TimescaleDB, MariaDB, MySQL, MongoDB, Redis and CouchDB.</span></div>
             </div>
@@ -137,6 +138,7 @@
 
         <section id="connect" class="card help__section">
             <h2>Connecting from your tools</h2>
+            <h3>Connecting from the host</h3>
             <p>Use <code>127.0.0.1</code> and the host port you chose. Avoid <code>localhost</code>, which can resolve to IPv6 where the container is not listening.</p>
             <table class="help__table">
                 <thead><tr><th>System</th><th>Address</th></tr></thead>
@@ -150,6 +152,31 @@
                 </tbody>
             </table>
             <p class="muted">The connection string on the instance card is complete and correctly escaped. Prefer it over typing one by hand.</p>
+        </section>
+
+        <section id="application-container-access" class="card help__section">
+            <h2>Application container access</h2>
+            <p>DevDb Studio provides a container network named <code>devdb-network</code>. Attach your application containers to this network, then enable <strong>Application container access</strong> for each database they need. The option defaults to off for each instance. DevDb Studio creates or checks the DNS-enabled bridge network when needed. Host ports still bind only to <code>127.0.0.1</code>.</p>
+            <p>For newly created instances, the same checkbox on the instance card enables or disables access after creation, without recreating the database or changing its data, credentials, or loopback connection. Disabling access disconnects that database from <code>devdb-network</code> and interrupts application-container connections. If your engine rejects a change while the instance is stopped, start it and try again. Existing instances are left unchanged and do not have this control.</p>
+            <p>Each new instance also has a private bridge network, <code>&lt;container-name&gt;-network</code>, which stays attached whether application container access is enabled or not. This avoids Podman's <code>pasta</code> limitation and keeps host publishing working when access is disabled. The private network is removed when the instance is deleted; <code>devdb-network</code> is retained.</p>
+            <h3>Configure your application containers</h3>
+            <p>Join application services to the external network in each Compose project, alongside their normal default network:</p>
+            <pre>services:
+  app:
+    image: your-application-image
+    networks:
+      - default
+      - devdb-network
+networks:
+  default: {}
+  devdb-network:
+    external: true
+    name: devdb-network</pre>
+            <p>Enable application container access for a database first so the network exists before starting Compose. Both applications and databases must use the same engine, user and WSL distro where applicable.</p>
+            <p>For Docker, this feature requires <strong>Docker CLI and Engine 25.0 or newer</strong> with <strong>API 1.44 or newer</strong>. Setup checks compatibility, and unsupported versions are blocked before application network setup or enabling access. Upgrade Docker or Docker Desktop and remove any <code>DOCKER_API_VERSION</code> override below 1.44, then rerun Setup. Loopback-only instances and disabling access remain available. This Docker version requirement does not apply to Podman.</p>
+            <h3>Which connection string?</h3>
+            <p>Copy <strong>Host connection (loopback)</strong> for host applications. When application container access is enabled, copy <strong>Application container connection (devdb-network)</strong> for application containers. It uses the database's unique container name and internal port, not <code>127.0.0.1</code> or its published host port. For example, two MariaDB instances can have host ports 3306 and 3307, but both use internal port 3306 with different container names. Each connection string has separate reveal and copy controls.</p>
+            <p>This does not expose the database to your LAN. Any container attached to <code>devdb-network</code> can attempt to connect to enabled databases; database credentials are still required. Use appropriate database credentials and do not attach untrusted containers.</p>
         </section>
 
         <section id="data" class="card help__section">

@@ -26,7 +26,7 @@ public interface IDbmsProvider
     Task<InstanceActionResult> StopAsync(DbInstance instance, CancellationToken ct);
     Task<InstanceActionResult> DeleteAsync(DbInstance instance, bool deleteVolume, CancellationToken ct);
     Task<QueryResult> ExecuteSqlAsync(DbInstance instance, string sql, CancellationToken ct);
-    string BuildConnectionString(DbInstance instance, bool maskPassword);
+    string BuildConnectionString(DbInstance instance, bool maskPassword, string host = "127.0.0.1");
 
     /// <summary>The exact <c>docker run</c> arguments used to create an instance. Also the source of the compose preview.</summary>
     IReadOnlyList<string> BuildRunArgs(InstanceCreateRequest req, Guid id, string container, string volume);

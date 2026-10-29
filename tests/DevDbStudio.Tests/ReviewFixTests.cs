@@ -160,12 +160,21 @@ public class ReviewFixTests
     {
         var instance = new DbInstance
         {
-            Id = Guid.NewGuid(), Name = "r", DbmsKey = RedisProvider.ProviderKey, ContainerName = "dbapp-redis-1",
-            HostPort = 6390, DatabaseName = "0", Username = "default", Password = "Passw0rd!x", VolumeName = "v", ImageTag = "8",
+            Id = Guid.NewGuid(),
+            Name = "r",
+            DbmsKey = RedisProvider.ProviderKey,
+            ContainerName = "dbapp-redis-1",
+            HostPort = 6390,
+            DatabaseName = "0",
+            Username = "default",
+            Password = "Passw0rd!x",
+            VolumeName = "v",
+            ImageTag = "8",
         };
         var repo = new MemoryRepo(instance);
         var runner = new FakeRunner(_ => Ok());
-        var manager = new InstanceManager(repo, [new RedisProvider(runner, NullLogger<RedisProvider>.Instance)], runner, NullLogger<InstanceManager>.Instance);
+        var manager = new InstanceManager(repo, [new RedisProvider(runner, NullLogger<RedisProvider>.Instance)], runner, NullLogger<InstanceManager>.Instance,
+            new SharedContainerNetwork(runner, NullLogger<SharedContainerNetwork>.Instance, new TestContainerEngine()));
         using var cts = new CancellationTokenSource();
         cts.Cancel();
 

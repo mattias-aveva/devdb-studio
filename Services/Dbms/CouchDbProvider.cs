@@ -43,6 +43,8 @@ public sealed class CouchDbProvider(IWslDockerRunner docker, ILogger<CouchDbProv
 
         try
         {
+            var network = await ContainerLifecycle.CreatePrivateNetworkAsync(docker, container, ct);
+            if (!network.Success) return InstanceCreateResult.Fail(network.Message, network.StdErr);
             var run = await docker.RunAsync(BuildRunArgs(req, id, container, volume), PullAndRunTimeout, ct: ct);
 
             if (run.ExitCode != 0)
@@ -62,6 +64,8 @@ public sealed class CouchDbProvider(IWslDockerRunner docker, ILogger<CouchDbProv
                 Password = req.Password,
                 VolumeName = volume,
                 ImageTag = tag,
+                SharedNetwork = req.SharedNetwork,
+                NetworkChangesSupported = true,
             };
 
             var ready = await WaitUntilReadyAsync(instance, ct);
@@ -85,6 +89,7 @@ public sealed class CouchDbProvider(IWslDockerRunner docker, ILogger<CouchDbProv
     public IReadOnlyList<string> BuildRunArgs(InstanceCreateRequest req, Guid id, string container, string volume) =>
     [
         "run", "-d", "--name", container,
+        .. SharedContainerNetwork.RunArgs(req, container),
         "--label", "dbapp.managed=true", "--label", $"dbapp.id={id}", "--label", $"dbapp.dbms={Key}",
         // Loopback only: the admin password is the sole protection of this server.
         "-p", $"127.0.0.1:{req.HostPort}:5984",
@@ -106,8 +111,8 @@ public sealed class CouchDbProvider(IWslDockerRunner docker, ILogger<CouchDbProv
     public Task<QueryResult> ExecuteSqlAsync(DbInstance instance, string script, CancellationToken ct) =>
         RunRequestsAsync(instance, script, QueryTimeout, ct);
 
-    public string BuildConnectionString(DbInstance i, bool maskPassword) =>
-        $"http://{Uri.EscapeDataString(i.Username)}:{(maskPassword ? "*****" : Uri.EscapeDataString(i.Password))}@127.0.0.1:{i.HostPort}/";
+    public string BuildConnectionString(DbInstance i, bool maskPassword, string host = "127.0.0.1") =>
+        $"http://{Uri.EscapeDataString(i.Username)}:{(maskPassword ? "*****" : Uri.EscapeDataString(i.Password))}@{host}:{i.HostPort}/";
 
     private async Task<QueryResult> RunRequestsAsync(DbInstance instance, string script, TimeSpan timeout, CancellationToken ct)
     {

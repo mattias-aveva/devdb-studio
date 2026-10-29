@@ -98,7 +98,39 @@ Replace the runtime identifier (for example `win-x64`) to target another platfor
 5. **Status** (`/status`): watch resources and administer containers.
 6. **Help** (`/help`): per-DBMS defaults, connection addresses and troubleshooting.
 
-Connect from your own tools with `127.0.0.1` (not `localhost`, which may resolve to IPv6): `127.0.0.1,<port>` for SQL Server, `127.0.0.1:<port>` for the others. Containers only listen on loopback.
+Connect from your own tools with `127.0.0.1` (not `localhost`, which may resolve to IPv6): `127.0.0.1,<port>` for SQL Server, `127.0.0.1:<port>` for the others. Published host ports bind to loopback only.
+
+### Application container access
+
+Choose **Application container access** on **Create instance** for each database your application containers need. It defaults to off. The instance card lets you enable or disable access later without recreating the container or changing its data or loopback access. DevDb Studio creates/checks the DNS-enabled `devdb-network` bridge when needed. There is no global setting.
+
+With Docker, application container access requires **Docker CLI and Engine 25.0+**, using **API 1.44+**, because initial creation connects to two networks. Setup reports compatibility, and the same check runs before application network setup or enabling access. Upgrade Docker (or Docker Desktop) and remove any `DOCKER_API_VERSION` override below 1.44 if the check fails. Loopback-only instances remain available with older Docker versions; disabling application container access is not blocked. Podman is not subject to this Docker version requirement.
+
+On **Instances**, copy **Host connection (loopback)** for host applications or **Application container connection (devdb-network)** for applications on that network. The latter appears only when access is enabled and uses the unique container name and the DBMS's internal port, not its published host port. Multiple MariaDB instances can therefore all use internal port 3306 without conflicts.
+
+Join application services to the external network in each Compose project:
+
+```yaml
+services:
+  app:
+    image: your-application-image
+    networks:
+      - default
+      - devdb-network
+networks:
+  default: {}
+  devdb-network:
+    external: true
+    name: devdb-network
+```
+
+Applications and database containers must use the same container engine, user and (on Windows) WSL distro. Any container on `devdb-network` can attempt to connect to enabled databases; database credentials are still required. Attach only trusted applications. This does not expose database ports to your LAN.
+
+For Podman-managed WSL distros (`podman-machine-*`), DevDb Studio uses the machine's existing Podman service socket so bridge networking uses the same runtime and network namespace as Podman on Windows. The Podman machine/service must be running; other WSL distros and native Linux continue to use their engine directly.
+
+New instances each retain a private bridge network named `<container-name>-network`, even when application container access is off, so access can be toggled safely on Docker and Podman. Disabling access detaches only that instance from `devdb-network` and removes its application container connection string; active application-container connections are interrupted. Host access remains available. If an engine requires the container to be running for network changes, start it and retry.
+
+Application container access is available only for newly created instances. Existing instances are left unchanged and do not have the new toggle. Deleting a new instance removes its private network but never deletes `devdb-network`. If you already have a network named `devdb-network`, it must use the bridge driver with container DNS enabled. Full application setup instructions are available under **Help → Application container access**, linked as **Connecting from application containers** beside each checkbox.
 
 ## Configuration
 

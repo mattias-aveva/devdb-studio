@@ -19,9 +19,11 @@ public sealed record DbInstance
     public string Password { get; init; } = "";
     public string VolumeName { get; init; } = "";
     public string ImageTag { get; init; } = "";
+    public bool SharedNetwork { get; init; }
+    public bool NetworkChangesSupported { get; init; }
 }
 
-public sealed record InstanceCreateRequest(string Name, string DbmsKey, int HostPort, string Password, string DatabaseName, string ImageTag);
+public sealed record InstanceCreateRequest(string Name, string DbmsKey, int HostPort, string Password, string DatabaseName, string ImageTag, bool SharedNetwork = false);
 
 public sealed record InstanceCreateResult(bool Success, DbInstance? Instance, string Message, string StdErr = "")
 {

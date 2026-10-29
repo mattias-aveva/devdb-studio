@@ -18,6 +18,7 @@ builder.Services.Configure<StorageOptions>(builder.Configuration.GetSection("Sto
 builder.Services.AddSingleton<IContainerEngine, ContainerEngine>();
 builder.Services.AddSingleton<IDockerService, DockerService>();
 builder.Services.AddSingleton<IWslDockerRunner, WslDockerRunner>();
+builder.Services.AddSingleton<ISharedContainerNetwork, SharedContainerNetwork>();
 builder.Services.AddSingleton<IInstanceRepository, JsonInstanceRepository>();
 builder.Services.AddSingleton<IDbmsProvider, MssqlProvider>();
 builder.Services.AddSingleton<IDbmsProvider, PostgresProvider>();

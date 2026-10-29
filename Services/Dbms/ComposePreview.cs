@@ -29,7 +29,7 @@ public static class ComposePreview
         var args = p.BuildRunArgs(shown, Guid.Empty, container, volume);
 
         string? name = null, image = null;
-        List<string> ports = [], volumes = [], command = [];
+        List<string> ports = [], volumes = [], command = [], networks = [];
         List<(string K, string V)> env = [], labels = [];
 
         for (var i = 1; i < args.Count; i++)
@@ -40,6 +40,7 @@ public static class ComposePreview
             {
                 case "-d": break;
                 case "--name": name = args[++i]; break;
+                case "--network": networks.Add(args[++i]); break;
                 case "-p": ports.Add(args[++i]); break;
                 case "-v": volumes.Add(args[++i]); break;
                 case "-e": env.Add(Split(args[++i])); break;
@@ -63,10 +64,28 @@ public static class ComposePreview
         sb.AppendLine("    labels:");
         foreach (var (k, v) in labels)
             sb.AppendLine($"      {k}: {Q(k == "dbapp.id" && v == Guid.Empty.ToString() ? "(generated on create)" : v)}");
+        if (networks.Count > 0)
+        {
+            sb.AppendLine("    networks:");
+            foreach (var network in networks) sb.AppendLine($"      - {Q(network)}");
+        }
         if (command.Count > 0)
             sb.AppendLine($"    command: [{string.Join(", ", command.Select(Q))}]");
         sb.AppendLine("volumes:");
         sb.AppendLine($"  {volume}:");
+        if (networks.Count > 0)
+        {
+            sb.AppendLine("networks:");
+            foreach (var network in networks)
+            {
+                sb.AppendLine($"  {network}:");
+                if (network == SharedContainerNetwork.NetworkName)
+                    sb.AppendLine("    external: true");
+                else
+                    sb.AppendLine("    driver: bridge");
+                sb.AppendLine($"    name: {Q(network)}");
+            }
+        }
         return sb.ToString();
     }
 

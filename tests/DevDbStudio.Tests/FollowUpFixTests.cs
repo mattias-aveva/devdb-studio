@@ -40,9 +40,17 @@ public class FollowUpFixTests
 
     private static DbInstance Instance(InstanceStatus status) => new()
     {
-        Id = Guid.NewGuid(), Name = "r", DbmsKey = RedisProvider.ProviderKey, ContainerName = "dbapp-redis-abcd1234",
-        HostPort = 6390, Status = status, DatabaseName = "0", Username = "default", Password = "Passw0rd!x",
-        VolumeName = "dbapp-redis-abcd1234-data", ImageTag = "8",
+        Id = Guid.NewGuid(),
+        Name = "r",
+        DbmsKey = RedisProvider.ProviderKey,
+        ContainerName = "dbapp-redis-abcd1234",
+        HostPort = 6390,
+        Status = status,
+        DatabaseName = "0",
+        Username = "default",
+        Password = "Passw0rd!x",
+        VolumeName = "dbapp-redis-abcd1234-data",
+        ImageTag = "8",
     };
 
     // ---- Connection strings ------------------------------------------------------------------------------------
@@ -150,7 +158,8 @@ public class FollowUpFixTests
         var inst = Instance(InstanceStatus.Running);
         var repo = new TrackingRepo(inst);
         var runner = new AsyncRunner(a => Task.FromResult(Ok($"{inst.ContainerName}|exited")));
-        var mgr = new InstanceManager(repo, [new RedisProvider(runner, NullLogger<RedisProvider>.Instance)], runner, NullLogger<InstanceManager>.Instance);
+        var mgr = new InstanceManager(repo, [new RedisProvider(runner, NullLogger<RedisProvider>.Instance)], runner, NullLogger<InstanceManager>.Instance,
+            new SharedContainerNetwork(runner, NullLogger<SharedContainerNetwork>.Instance, new TestContainerEngine()));
 
         var res = await mgr.RefreshStatusAsync();
 
@@ -170,7 +179,8 @@ public class FollowUpFixTests
             "ps" => Task.FromResult(Ok($"{inst.ContainerName}|running")),
             _ => Task.FromResult(Ok()),
         });
-        var mgr = new InstanceManager(repo, [new RedisProvider(runner, NullLogger<RedisProvider>.Instance)], runner, NullLogger<InstanceManager>.Instance);
+        var mgr = new InstanceManager(repo, [new RedisProvider(runner, NullLogger<RedisProvider>.Instance)], runner, NullLogger<InstanceManager>.Instance,
+            new SharedContainerNetwork(runner, NullLogger<SharedContainerNetwork>.Instance, new TestContainerEngine()));
 
         var start = mgr.StartAsync(inst.Id);
         await Task.Delay(100); // let Start take the per-instance gate and block in "docker start"

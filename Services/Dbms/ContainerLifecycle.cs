@@ -11,7 +11,15 @@ internal static class ContainerLifecycle
     public static string Err(ProcessResult r) => r.StdErr.Length > 0 ? r.StdErr : r.StdOut;
 
     public static InstanceActionResult Result(ProcessResult r, string ok, string fail) =>
-        r.ExitCode == 0 ? new(true, ok) : new(false, r.TimedOut ? "The command timed out." : fail, Err(r));
+        r.ExitCode == 0 && !r.TimedOut ? new(true, ok) : new(false, r.TimedOut ? "The command timed out." : fail, Err(r));
+
+    public static async Task<InstanceActionResult> CreatePrivateNetworkAsync(IWslDockerRunner docker, string container, CancellationToken ct)
+    {
+        // A separate persistent bridge allows sharing to be detached without losing published ports.
+        var r = await docker.RunAsync(["network", "create", "--driver", "bridge", "--label", "dbapp.managed=true",
+            SharedContainerNetwork.PrivateNetworkName(container)], ct: ct);
+        return Result(r, "Private network created.", "Could not create the instance's private network. Check the engine and try again.");
+    }
 
     public static async Task<InstanceActionResult> StartContainerAsync(IWslDockerRunner docker, DbInstance instance, CancellationToken ct)
     {
@@ -32,6 +40,14 @@ internal static class ContainerLifecycle
         if (rm.ExitCode != 0 && !Err(rm).Contains("No such container", StringComparison.OrdinalIgnoreCase))
             return new(false, "Container removal failed.", Err(rm));
 
+        if (instance.NetworkChangesSupported)
+        {
+            var network = await docker.RunAsync(["network", "rm", SharedContainerNetwork.PrivateNetworkName(instance.ContainerName)], ct: CancellationToken.None);
+            if (network.ExitCode != 0 && !Err(network).Contains("no such network", StringComparison.OrdinalIgnoreCase)
+                && !Err(network).Contains("not found", StringComparison.OrdinalIgnoreCase))
+                return new(false, "Container removed, but its private network could not be deleted. Retry deletion.", Err(network));
+        }
+
         if (!deleteVolume) return new(true, $"Deleted {instance.Name}. Data volume '{instance.VolumeName}' was kept.");
 
         // Not cancellable: once the container is gone the volume must follow, or it is orphaned.
@@ -48,6 +64,9 @@ internal static class ContainerLifecycle
         {
             await docker.RunAsync(["rm", "-f", container], StopTimeout);
             await docker.RunAsync(["volume", "rm", volume]);
+            var network = await docker.RunAsync(["network", "rm", SharedContainerNetwork.PrivateNetworkName(container)]);
+            if (network.ExitCode != 0)
+                log.LogWarning("Could not clean up private network for {Container}: {Error}", container, Err(network));
         }
         catch (Exception ex) { log.LogWarning(ex, "Cleanup of {Container} failed", container); }
     }
@@ -60,7 +79,12 @@ internal static class ContainerLifecycle
         IWslDockerRunner docker, ILogger log, ProcessResult run, string container, string volume)
     {
         if (IsNameConflict(run))
+        {
+            var network = await docker.RunAsync(["network", "rm", SharedContainerNetwork.PrivateNetworkName(container)]);
+            if (network.ExitCode != 0)
+                log.LogWarning("Could not clean up private network for {Container}: {Error}", container, Err(network));
             return InstanceCreateResult.Fail("Container name collision. Please try again.", Err(run));
+        }
         await CleanupAsync(docker, log, container, volume);
         return InstanceCreateResult.Fail("Container run failed.", Err(run));
     }

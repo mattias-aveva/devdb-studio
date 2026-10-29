@@ -54,6 +54,7 @@ public sealed class ContainerEngine : IContainerEngine
     private readonly SemaphoreSlim _detectLock = new(1, 1);
     private volatile EngineChoice _choice;
     private volatile string _distroChoice;
+    private readonly SemaphoreSlim _settingsLock = new(1, 1);
     private sealed record Detection(string Distro, string Exe, bool Healthy, DateTime At);
 
     // Replaced as a whole and read once per use; the generation lets a probe that started before a change be discarded.
@@ -175,14 +176,30 @@ public sealed class ContainerEngine : IContainerEngine
 
     private async Task SaveAsync(CancellationToken ct)
     {
+        await _settingsLock.WaitAsync(ct);
         try
         {
-            Directory.CreateDirectory(Path.GetDirectoryName(_settingsPath)!);
-            await File.WriteAllTextAsync(_settingsPath, JsonSerializer.Serialize(new Settings(_choice.ToString(), _distroChoice)), ct);
+            await WriteSettingsAsync(new Settings(_choice.ToString(), _distroChoice), ct);
         }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
         {
             _log.LogWarning(ex, "Could not save settings to {Path}", _settingsPath);
+        }
+        finally { _settingsLock.Release(); }
+    }
+
+    private async Task WriteSettingsAsync(Settings settings, CancellationToken ct)
+    {
+        Directory.CreateDirectory(Path.GetDirectoryName(_settingsPath)!);
+        var temporary = _settingsPath + ".tmp";
+        try
+        {
+            await File.WriteAllTextAsync(temporary, JsonSerializer.Serialize(settings), ct);
+            File.Move(temporary, _settingsPath, overwrite: true);
+        }
+        finally
+        {
+            if (File.Exists(temporary)) File.Delete(temporary);
         }
     }
 
@@ -204,4 +221,3 @@ public sealed class ContainerEngine : IContainerEngine
         return (fallbackDistro, engines[0], false);
     }
 }
-

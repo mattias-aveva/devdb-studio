@@ -39,6 +39,8 @@ public sealed class RedisProvider(IWslDockerRunner docker, ILogger<RedisProvider
 
         try
         {
+            var network = await ContainerLifecycle.CreatePrivateNetworkAsync(docker, container, ct);
+            if (!network.Success) return InstanceCreateResult.Fail(network.Message, network.StdErr);
             var run = await docker.RunAsync(BuildRunArgs(req, id, container, volume), PullAndRunTimeout, ct: ct);
 
             if (run.ExitCode != 0)
@@ -58,6 +60,8 @@ public sealed class RedisProvider(IWslDockerRunner docker, ILogger<RedisProvider
                 Password = req.Password,
                 VolumeName = volume,
                 ImageTag = tag,
+                SharedNetwork = req.SharedNetwork,
+                NetworkChangesSupported = true,
             };
 
             var ready = await WaitUntilReadyAsync(instance, ct);
@@ -78,6 +82,7 @@ public sealed class RedisProvider(IWslDockerRunner docker, ILogger<RedisProvider
     public IReadOnlyList<string> BuildRunArgs(InstanceCreateRequest req, Guid id, string container, string volume) =>
     [
         "run", "-d", "--name", container,
+        .. SharedContainerNetwork.RunArgs(req, container),
         "--label", "dbapp.managed=true", "--label", $"dbapp.id={id}", "--label", $"dbapp.dbms={Key}",
         // Loopback only: the password is the sole protection of this server.
         "-p", $"127.0.0.1:{req.HostPort}:6379",
@@ -100,8 +105,8 @@ public sealed class RedisProvider(IWslDockerRunner docker, ILogger<RedisProvider
     public Task<QueryResult> ExecuteSqlAsync(DbInstance instance, string script, CancellationToken ct) =>
         RunCliAsync(instance, script, QueryTimeout, ct);
 
-    public string BuildConnectionString(DbInstance i, bool maskPassword) =>
-        $"redis://{Uri.EscapeDataString(i.Username)}:{(maskPassword ? "*****" : Uri.EscapeDataString(i.Password))}@127.0.0.1:{i.HostPort}/{i.DatabaseName}";
+    public string BuildConnectionString(DbInstance i, bool maskPassword, string host = "127.0.0.1") =>
+        $"redis://{Uri.EscapeDataString(i.Username)}:{(maskPassword ? "*****" : Uri.EscapeDataString(i.Password))}@{host}:{i.HostPort}/{i.DatabaseName}";
 
     private async Task<QueryResult> RunCliAsync(DbInstance instance, string script, TimeSpan timeout, CancellationToken ct)
     {

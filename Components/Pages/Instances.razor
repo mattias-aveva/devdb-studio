@@ -104,7 +104,21 @@ else
                 <div><dt>User</dt><dd>@i.Username</dd></div>
                 <div><dt>Created</dt><dd>@i.CreatedUtc.ToLocalTime().ToString("yyyy-MM-dd HH:mm")</dd></div>
             </dl>
-            <ConnectionStringBox Build="mask => Manager.BuildConnectionString(i, mask)" />
+            <ConnectionStringBox Label="Host connection (loopback)" Build="mask => Manager.BuildConnectionString(i, mask)" />
+            @if (i.NetworkChangesSupported)
+            {
+                <label class="check">
+                    <input type="checkbox" @bind:get="i.SharedNetwork" @bind:set="(bool enabled) => SetSharedNetworkAsync(i, enabled)"
+                           disabled="@(_busy || _loading || i.Status is InstanceStatus.NotFound or InstanceStatus.Unknown)" />
+                    Application container access
+                </label>
+                <p class="muted">Allow applications on <code>devdb-network</code> to connect using this database's container name. Loopback access stays available. <a href="/help#application-container-access">Connecting from application containers</a></p>
+            }
+            @if (i.SharedNetwork)
+            {
+                <ConnectionStringBox Label="Application container connection (devdb-network)" Build='mask => Manager.BuildNetworkConnectionString(i, mask) ?? "(no provider)"' />
+                <p class="muted">Container: <code>@i.ContainerName</code>.</p>
+            }
             @if (i.Status == InstanceStatus.NotFound)
             {
                 <p class="muted">The container no longer exists in the container engine. Delete this entry to clean up.</p>
@@ -188,6 +202,8 @@ else
 
     private Task StartAsync(DbInstance i) => RunAsync(() => Manager.StartAsync(i.Id, _cts.Token));
     private Task StopAsync(DbInstance i) => RunAsync(() => Manager.StopAsync(i.Id, _cts.Token));
+    private Task SetSharedNetworkAsync(DbInstance i, bool enabled) =>
+        RunAsync(() => Manager.SetSharedNetworkAsync(i.Id, enabled, _cts.Token));
 
     private async Task DeleteAsync(DbInstance i)
     {

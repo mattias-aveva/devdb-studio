@@ -48,6 +48,8 @@ public abstract class MySqlFamilyProvider(IWslDockerRunner docker, ILogger log) 
 
         try
         {
+            var network = await ContainerLifecycle.CreatePrivateNetworkAsync(docker, container, ct);
+            if (!network.Success) return InstanceCreateResult.Fail(network.Message, network.StdErr);
             var run = await docker.RunAsync(BuildRunArgs(req, id, container, volume), PullAndRunTimeout, ct: ct);
 
             if (run.ExitCode != 0)
@@ -67,6 +69,8 @@ public abstract class MySqlFamilyProvider(IWslDockerRunner docker, ILogger log) 
                 Password = req.Password,
                 VolumeName = volume,
                 ImageTag = tag,
+                SharedNetwork = req.SharedNetwork,
+                NetworkChangesSupported = true,
             };
 
             var ready = await WaitUntilReadyAsync(instance, ct);
@@ -87,6 +91,7 @@ public abstract class MySqlFamilyProvider(IWslDockerRunner docker, ILogger log) 
     public IReadOnlyList<string> BuildRunArgs(InstanceCreateRequest req, Guid id, string container, string volume) =>
     [
         "run", "-d", "--name", container,
+        .. SharedContainerNetwork.RunArgs(req, container),
         "--label", "dbapp.managed=true", "--label", $"dbapp.id={id}", "--label", $"dbapp.dbms={Key}",
         // Loopback only: the password is the sole protection of this server.
         "-p", $"127.0.0.1:{req.HostPort}:3306",
@@ -111,8 +116,8 @@ public abstract class MySqlFamilyProvider(IWslDockerRunner docker, ILogger log) 
     public Task<QueryResult> ExecuteSqlAsync(DbInstance instance, string sql, CancellationToken ct) =>
         RunClientAsync(instance, sql, QueryTimeout, ct);
 
-    public string BuildConnectionString(DbInstance i, bool maskPassword) =>
-        $"Server=127.0.0.1;Port={i.HostPort};Database={i.DatabaseName};User ID={i.Username};Password={(maskPassword ? "*****" : ConnectionStrings.Value(i.Password))};";
+    public string BuildConnectionString(DbInstance i, bool maskPassword, string host = "127.0.0.1") =>
+        $"Server={host};Port={i.HostPort};Database={i.DatabaseName};User ID={i.Username};Password={(maskPassword ? "*****" : ConnectionStrings.Value(i.Password))};";
 
     private async Task<string> GetClientAsync(DbInstance instance, CancellationToken ct)
     {

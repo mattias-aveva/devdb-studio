@@ -24,7 +24,7 @@ public interface IPrerequisiteCheckService
     Task<IReadOnlyList<CheckResult>> RunChecksAsync(CancellationToken ct = default);
 }
 
-public sealed class PrerequisiteCheckService(IOptions<WslOptions> options, IContainerEngine engine) : IPrerequisiteCheckService
+public sealed class PrerequisiteCheckService(IOptions<WslOptions> options, IContainerEngine engine, IWslDockerRunner docker) : IPrerequisiteCheckService
 {
     private const string Wsl = "wsl.exe";
     private readonly WslOptions _opt = options.Value;
@@ -112,6 +112,7 @@ public sealed class PrerequisiteCheckService(IOptions<WslOptions> options, ICont
                   """
                 : null);
         results.Add(daemon);
+        if (!podman) results.Add(await CheckDockerNetworkAsync(daemon, ct));
 
         results.Add(await Run("compose", $"{name} Compose available", "Compose is used to define and start database stacks.",
             ["-d", d, "--", exe, "compose", "version"], r => r.ExitCode == 0,
@@ -154,7 +155,7 @@ public sealed class PrerequisiteCheckService(IOptions<WslOptions> options, ICont
                   """, ct, file: exe);
         results.Add(cli);
 
-        results.Add(await Run("engine-daemon",
+        var daemon = await Run("engine-daemon",
             podman ? "Podman working" : "Docker daemon reachable",
             podman ? "Podman is daemonless, but `podman info` must succeed for your user before containers can be created."
                    : "Containers can only be created when the Docker daemon is running and accessible.",
@@ -174,7 +175,9 @@ public sealed class PrerequisiteCheckService(IOptions<WslOptions> options, ICont
                   1. Your user is not allowed to access /var/run/docker.sock (permission denied). Add your user to the docker group: `sudo usermod -aG docker $USER`
                   2. Log out and back in (or run `newgrp docker`), then verify: `docker info`
                   """
-                : null));
+                : null);
+        results.Add(daemon);
+        if (!podman) results.Add(await CheckDockerNetworkAsync(daemon, ct));
 
         results.Add(await Run("compose", $"{name} Compose available", "Compose is used to define and start database stacks.",
             ["compose", "version"], r => r.ExitCode == 0,
@@ -189,6 +192,20 @@ public sealed class PrerequisiteCheckService(IOptions<WslOptions> options, ICont
                   """, ct, dependsOn: cli, file: exe));
 
         return results;
+    }
+
+    internal async Task<CheckResult> CheckDockerNetworkAsync(CheckResult daemon, CancellationToken ct)
+    {
+        const string title = "Docker application container access compatible";
+        const string command = "docker version --format \"" + DockerNetworkCompatibility.VersionFormat + "\"";
+        if (daemon.Status != CheckStatus.Pass)
+            return new("docker-network-version", title, CheckStatus.Unknown, command, "",
+                $"Skipped because '{daemon.Title}' did not pass.", DockerNetworkCompatibility.Requirement, "");
+
+        var result = await DockerNetworkCompatibility.CheckAsync(docker, ct);
+        return new("docker-network-version", title, result.Success ? CheckStatus.Pass : CheckStatus.Fail,
+            command, result.Message, result.StdErr, DockerNetworkCompatibility.Requirement,
+            result.Success ? "" : DockerNetworkCompatibility.Help);
     }
 
     private static bool IsPermissionDenied(ProcessResult r) =>

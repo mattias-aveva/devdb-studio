@@ -2,7 +2,7 @@
 @implements IDisposable
 
 <div class="conn">
-    <div class="conn__label">Connection string</div>
+    <div class="conn__label">@Label</div>
     <div class="conn__row">
         <code class="conn__value">@Value</code>
         <button type="button" class="btn btn-sm" @onclick="ToggleAsync" title="@(_reveal ? "Hide password" : "Show password")">@(_reveal ? "Hide" : "Reveal")</button>
@@ -14,6 +14,7 @@
 
 @code {
     [Parameter, EditorRequired] public Func<bool, string> Build { get; set; } = _ => "";
+    [Parameter] public string Label { get; set; } = "Connection string";
 
     private enum CopyState { Idle, Copied, Failed }
     private bool _reveal;

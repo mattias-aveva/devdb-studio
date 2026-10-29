@@ -15,13 +15,16 @@ public interface IInstanceManager
     Task<InstanceCreateResult> CreateAsync(InstanceCreateRequest req, CancellationToken ct = default);
     Task<InstanceActionResult> StartAsync(Guid id, CancellationToken ct = default);
     Task<InstanceActionResult> StopAsync(Guid id, CancellationToken ct = default);
+    Task<InstanceActionResult> SetSharedNetworkAsync(Guid id, bool enabled, CancellationToken ct = default);
     Task<InstanceActionResult> DeleteAsync(Guid id, bool deleteVolume, CancellationToken ct = default);
     Task<QueryResult> ExecuteSqlAsync(Guid id, string sql, CancellationToken ct = default);
     string BuildConnectionString(DbInstance instance, bool maskPassword);
+    string? BuildNetworkConnectionString(DbInstance instance, bool maskPassword);
 }
 
 public sealed class InstanceManager(
-    IInstanceRepository repo, IEnumerable<IDbmsProvider> providers, IWslDockerRunner docker, ILogger<InstanceManager> log) : IInstanceManager
+    IInstanceRepository repo, IEnumerable<IDbmsProvider> providers, IWslDockerRunner docker, ILogger<InstanceManager> log,
+    ISharedContainerNetwork network) : IInstanceManager
 {
     private readonly IReadOnlyList<IDbmsProvider> _providers = providers.ToList();
     private readonly SemaphoreSlim _createLock = new(1, 1);
@@ -78,7 +81,7 @@ public sealed class InstanceManager(
     private static InstanceStatus MapState(string state) => state switch
     {
         "running" or "restarting" or "paused" => InstanceStatus.Running,
-                "exited" or "created" or "dead" or "stopped" or "configured" => InstanceStatus.Stopped,
+        "exited" or "created" or "dead" or "stopped" or "configured" => InstanceStatus.Stopped,
         _ => InstanceStatus.Unknown
     };
 
@@ -98,6 +101,13 @@ public sealed class InstanceManager(
             if (existing.Any(i => i.HostPort == req.HostPort))
                 return InstanceCreateResult.Fail($"Port {req.HostPort} is already used by another instance.");
 
+            if (req.SharedNetwork)
+            {
+                var validation = InstanceValidation.Validate(req);
+                if (validation.Count > 0) return InstanceCreateResult.Fail(string.Join(" ", validation));
+                var ready = await network.EnsureAsync(ct);
+                if (!ready.Success) return InstanceCreateResult.Fail(ready.Message, ready.StdErr);
+            }
             var result = await provider.CreateAsync(req with { Name = name }, ct);
             if (result.Success && result.Instance is not null)
             {
@@ -117,6 +127,11 @@ public sealed class InstanceManager(
     public Task<InstanceActionResult> StartAsync(Guid id, CancellationToken ct = default) =>
         WithInstance(id, async (i, p) =>
         {
+            if (i.SharedNetwork)
+            {
+                var ready = await network.EnsureAsync(ct);
+                if (!ready.Success) return ready;
+            }
             var r = await p.StartAsync(i, ct);
             if (r.Success) await repo.UpdateAsync(i with { Status = InstanceStatus.Running }, CancellationToken.None);
             return r;
@@ -128,6 +143,20 @@ public sealed class InstanceManager(
             var r = await p.StopAsync(i, ct);
             if (r.Success) await repo.UpdateAsync(i with { Status = InstanceStatus.Stopped }, CancellationToken.None);
             return r;
+        });
+
+    public Task<InstanceActionResult> SetSharedNetworkAsync(Guid id, bool enabled, CancellationToken ct = default) =>
+        WithInstance(id, async (i, _) =>
+        {
+            if (!i.NetworkChangesSupported)
+                return new(false, "Network changes are available only for newly created instances. This container has not been changed.");
+            var result = await network.SetMembershipAsync(i, enabled, ct);
+            if (result.Success)
+            {
+                await repo.UpdateAsync(i with { SharedNetwork = enabled }, CancellationToken.None);
+                log.LogInformation("Set application container access for {Container} to {Enabled}", i.ContainerName, enabled);
+            }
+            return result;
         });
 
     public Task<InstanceActionResult> DeleteAsync(Guid id, bool deleteVolume, CancellationToken ct = default) =>
@@ -155,6 +184,11 @@ public sealed class InstanceManager(
 
     public string BuildConnectionString(DbInstance instance, bool maskPassword) =>
         GetProvider(instance.DbmsKey)?.BuildConnectionString(instance, maskPassword) ?? "(no provider)";
+
+    public string? BuildNetworkConnectionString(DbInstance instance, bool maskPassword) =>
+        instance.SharedNetwork && GetProvider(instance.DbmsKey) is { } provider
+            ? provider.BuildConnectionString(instance with { HostPort = provider.DefaultPort }, maskPassword, instance.ContainerName)
+            : null;
 
     // One operation per instance at a time, so a double click can't start and stop concurrently.
     private async Task<InstanceActionResult> WithInstance(Guid id, Func<DbInstance, IDbmsProvider, Task<InstanceActionResult>> action)
